@@ -10,5 +10,4 @@ on:
 
 jobs:
   sync:
-    uses: e-shrdlu/workflows/.forgejo/workflows/github_e-shrdlu_pull-on-timer.yml@main
-    secrets: inherit
+    uses: e-shrdlu/workflows/.forgejo/workflows/pull-remote-mirrors-on-timer.yml@main
