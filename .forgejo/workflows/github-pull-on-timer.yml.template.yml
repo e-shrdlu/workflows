@@ -1,0 +1,12 @@
+on:
+  schedule:
+    - cron: '0 * * * *' # every hour
+    # - cron: '*/15 * * * *' # every 15mins
+    # - cron: '0 2 * * *' # every day @ 2am
+  workflow_dispatch:
+
+  jobs:
+    sync:
+      uses: e-shrdlu/workflows/.forgejo/workflows/github-pull-on-timer@main
+      secrets:
+        GH_PAT: ${{ secrets.GH_PAT }}
