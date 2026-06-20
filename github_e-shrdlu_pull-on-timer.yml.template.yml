@@ -1,10 +1,9 @@
 on:
   schedule:
-    - cron: '* * * * *' # every hour
     # - cron: '0 * * * *' # every hour
     # - cron: '*/15 * * * *' # every 15mins
     # - cron: '0 2 * * *' # every day @ 2am
-    # - cron: '0 2 * * 1' # every monday @ 2am
+    - cron: '0 2 * * 1' # every monday @ 2am
   workflow_dispatch:
 
 jobs:
