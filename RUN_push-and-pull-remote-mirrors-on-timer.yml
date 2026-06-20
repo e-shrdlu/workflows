@@ -29,3 +29,6 @@ jobs:
   run-sync-job:
     uses: e-shrdlu/workflows/.forgejo/workflows/pull-and-push-remote-mirrors-on-timer.yml@main
     secrets: inherit
+    with:
+      # github_repo: other-owner/repo-name  # only needed if GitHub repo has a different owner/name
+      # gg_repo: other-owner/repo-name      # only needed if git.gay repo has a different owner/name
