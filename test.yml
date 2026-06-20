@@ -1,0 +1,9 @@
+# put this in .forgejo/workflows, and edit the cronjob to be the right time esired
+
+on:
+  schedule:
+    - cron: '* * * * *' # every hour
+
+jobs:
+  sync:
+    uses: e-shrdlu/workflows/.forgejo/workflows/test.yml@main
