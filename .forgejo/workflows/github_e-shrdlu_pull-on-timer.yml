@@ -11,3 +11,4 @@ jobs:
           cd repo
           git fetch https://x-access-token:${{ secrets.GH_PAT }}@github.com/e-shrdlu/${{ github.event.repository.name }}.git '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
           git push --mirror https://oauth2:${{ secrets.GITHUB_TOKEN }}@git.lan.everyls.net/e-shrdlu/${{ github.event.repository.name }}.git
+
