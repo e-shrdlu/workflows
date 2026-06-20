@@ -33,7 +33,7 @@ jobs:
     if: github.server_url == 'https://git.lan.everyls.net'
     steps:
       - name: dependencies
-        run: apt update && apt install -y git
+        run: apt-get update && apt-get install -y git --no-install-recommends
 
       - name: sync hub with external remotes
         id: sync
