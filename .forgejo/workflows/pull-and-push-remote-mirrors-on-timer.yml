@@ -1,0 +1,210 @@
+# Diverged branches get written to refs/conflicts/<remote>/<branch> on the
+# hub instead of refs/heads/, so they don't show up as real branches and
+# don't get fanned out to other remotes. To work with them locally:
+#
+#   # list what's there
+#   git ls-remote https://git.lan.everyls.net/OWNER/REPO.git 'refs/conflicts/*'
+#
+#   # fetch one down to inspect/merge
+#   git fetch https://git.lan.everyls.net/OWNER/REPO.git \
+#     'refs/conflicts/github/BRANCH:refs/conflicts/github/BRANCH'
+#
+#   # once resolved, delete it from the hub (the script never does this for you)
+#   git push https://git.lan.everyls.net/OWNER/REPO.git \
+#     --delete refs/conflicts/github/BRANCH
+#
+# NOTE: this is now the *only* thing syncing hub <-> github/gg in either
+# direction. forgesync's push mirrors for these repos must be disabled —
+# leaving them on means forgesync can still force-push and silently
+# overwrite a commit this job hasn't pulled in yet.
+
+on:
+  workflow_call:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sync-hub
+      cancel-in-progress: false
+    # this repo gets mirrored elsewhere. If Actions ever gets enabled there,
+    # this stops the job from doing anything unless it's actually running
+    # on the hub.
+    if: github.server_url == 'https://git.lan.everyls.net'
+    steps:
+      - name: dependencies
+        run: apt update && apt install -y git
+
+      - name: sync hub with external remotes
+        id: sync
+        env:
+          FORGEJO_URL: https://oauth2:${{ secrets.GITHUB_TOKEN }}@git.lan.everyls.net/${{ github.repository }}.git
+          GITHUB_URL: https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git
+          GG_URL: https://oauth2:${{ secrets.GG_PAT }}@git.gay/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+
+          git clone --mirror --filter=blob:none "$FORGEJO_URL" repo.git
+          cd repo.git
+          git config remote.origin.mirror false
+
+          # Remotes to sync with, both directions. Add one: add its secret
+          # + *_URL above, add one line here.
+          REMOTES=(
+            "github:$GITHUB_URL"
+            "gg:$GG_URL"
+          )
+
+          conflicts=()
+          fetch_failures=()
+          push_failures=()
+
+          reconcile_branches() {
+            local name="$1"
+            while read -r ref; do
+              [ -z "$ref" ] && continue
+              branch="${ref#refs/$name/heads/}"
+              local_ref="refs/heads/$branch"
+
+              if ! git show-ref --quiet "$local_ref"; then
+                echo "  [new]      $branch (only on $name)"
+                git update-ref "$local_ref" "$ref"
+                continue
+              fi
+
+              a_sha=$(git rev-parse "$local_ref")
+              b_sha=$(git rev-parse "$ref")
+
+              if [ "$a_sha" = "$b_sha" ]; then
+                continue
+              elif git merge-base --is-ancestor "$a_sha" "$b_sha"; then
+                echo "  [ff]       $branch  ${a_sha:0:7} -> ${b_sha:0:7}  (from $name)"
+                git update-ref "$local_ref" "$b_sha"
+              elif git merge-base --is-ancestor "$b_sha" "$a_sha"; then
+                echo "  [skip]     $branch (hub already ahead of $name)"
+              else
+                echo "  [DIVERGED] $branch vs $name — leaving hub's version untouched"
+                git update-ref "refs/conflicts/${name}/${branch}" "$b_sha"
+                conflicts+=("$name:$branch")
+              fi
+            done < <(git for-each-ref --format='%(refname)' "refs/$name/heads/")
+          }
+
+          reconcile_tags() {
+            local name="$1"
+            while read -r ref; do
+              [ -z "$ref" ] && continue
+              tag="${ref#refs/$name/tags/}"
+              local_ref="refs/tags/$tag"
+              if ! git show-ref --quiet "$local_ref"; then
+                echo "  [new]   tag $tag (from $name)"
+                git update-ref "$local_ref" "$ref"
+              else
+                a_sha=$(git rev-parse "$local_ref")
+                b_sha=$(git rev-parse "$ref")
+                if [ "$a_sha" != "$b_sha" ]; then
+                  echo "  [WARN]  tag $tag differs between hub and $name — leaving hub's as-is (tags shouldn't move)"
+                fi
+              fi
+            done < <(git for-each-ref --format='%(refname)' "refs/$name/tags/")
+          }
+
+          for entry in "${REMOTES[@]}"; do
+            name="${entry%%:*}"
+            url="${entry#*:}"
+
+            echo "==> fetching $name"
+            if [[ "$url" == *":@"* ]]; then
+              echo "  [WARN] $name's URL has an empty credential — check the secret name/value, not just the repo"
+            fi
+            if ! git fetch "$url" "+refs/heads/*:refs/$name/heads/*" "+refs/tags/*:refs/$name/tags/*"; then
+              echo "  [WARN] could not fetch from $name — repo may not exist there yet, or check credentials. Skipping $name this run."
+              fetch_failures+=("$name")
+              continue
+            fi
+
+            echo "==> reconciling branches from $name"
+            reconcile_branches "$name"
+
+            echo "==> reconciling tags from $name"
+            reconcile_tags "$name"
+
+            git for-each-ref --format="delete %(refname)" "refs/$name/" | git update-ref --stdin
+          done
+
+          echo "==> pushing merged state to the hub"
+          git push origin 'refs/heads/*:refs/heads/*'
+          git push origin 'refs/tags/*:refs/tags/*'
+          if [ -n "$(git for-each-ref refs/conflicts/)" ]; then
+            git push origin 'refs/conflicts/*:refs/conflicts/*'
+          fi
+
+          echo "==> pushing merged state out to every external remote"
+          for entry in "${REMOTES[@]}"; do
+            name="${entry%%:*}"
+            url="${entry#*:}"
+
+            echo "==> pushing to $name"
+            if ! git push "$url" 'refs/heads/*:refs/heads/*'; then
+              echo "  [WARN] could not push branches to $name"
+              push_failures+=("$name (branches)")
+            fi
+            if ! git push "$url" 'refs/tags/*:refs/tags/*'; then
+              echo "  [WARN] could not push tags to $name"
+              push_failures+=("$name (tags)")
+            fi
+          done
+
+          if [ "${#fetch_failures[@]}" -gt 0 ]; then
+            echo "::warning::Could not fetch from: ${fetch_failures[*]} (repo missing there, or bad/missing credentials)"
+          fi
+
+          if [ "${#push_failures[@]}" -gt 0 ]; then
+            echo "::warning::Could not push to: ${push_failures[*]} (repo missing there, bad/missing credentials, or it gained a commit mid-run — next scheduled run will retry)"
+          fi
+
+          if [ "${#conflicts[@]}" -gt 0 ]; then
+            hub_url="${FORGEJO_URL/#*@/https://}"
+            {
+              echo "conflicts<<EOF"
+              printf '%s\n' "${conflicts[@]}"
+              echo "EOF"
+              echo "hub_url=$hub_url"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: diverged branches — manual merge required
+        if: steps.sync.outputs.conflicts != ''
+        env:
+          CONFLICTS: ${{ steps.sync.outputs.conflicts }}
+          HUB_URL: ${{ steps.sync.outputs.hub_url }}
+        run: |
+          echo "========================================================"
+          echo "DIVERGED BRANCHES — manual merge required"
+          echo "========================================================"
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            name="${entry%%:*}"
+            branch="${entry#*:}"
+            echo ""
+            echo "  $branch  (diverged vs $name)"
+            echo ""
+            echo "    # fetch the diverged commit locally:"
+            echo "    git fetch $HUB_URL \\"
+            echo "      refs/conflicts/${name}/${branch}:refs/conflicts/${name}/${branch}"
+            echo ""
+            echo "    # merge it into the branch:"
+            echo "    git switch ${branch}"
+            echo "    git merge refs/conflicts/${name}/${branch}"
+            echo "    # (resolve conflicts if any: git add . && git merge --continue)"
+            echo ""
+            echo "    # push result to hub (next sync propagates to other remotes):"
+            echo "    git push $HUB_URL ${branch}:${branch}"
+            echo ""
+            echo "    # clean up the conflict marker:"
+            echo "    git push $HUB_URL --delete refs/conflicts/${name}/${branch}"
+          done <<< "$CONFLICTS"
+          echo ""
+          echo "========================================================"
+          echo "::error::Diverged branches need manual merge: $(tr '\n' ',' <<< "$CONFLICTS" | sed 's/,$//')"
+          exit 1
