@@ -7,6 +7,5 @@ on:
 
 jobs:
   sync:
-    uses: e-shrdlu/workflows/.forgejo/workflows/github-pull-on-timer.yml@main
-    secrets:
-      GH_PAT: ${{ secrets.GH_PAT }}
+    uses: e-shrdlu/workflows/.forgejo/workflows/github_e-shrdlu_pull-on-timer.yml@main
+    secrets: inherit
