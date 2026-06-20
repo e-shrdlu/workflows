@@ -22,7 +22,7 @@ on:
   workflow_call:
 
 jobs:
-  sync:
+  remote-mirror-sync:
     runs-on: ubuntu-latest
     concurrency:
       group: sync-hub

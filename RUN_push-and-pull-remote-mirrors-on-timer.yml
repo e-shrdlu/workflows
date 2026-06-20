@@ -26,6 +26,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync:
+  run-sync-job:
     uses: e-shrdlu/workflows/.forgejo/workflows/pull-and-push-remote-mirrors-on-timer.yml@main
     secrets: inherit
