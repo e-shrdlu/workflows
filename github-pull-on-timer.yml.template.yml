@@ -5,8 +5,8 @@ on:
     # - cron: '0 2 * * *' # every day @ 2am
   workflow_dispatch:
 
-  jobs:
-    sync:
-      uses: e-shrdlu/workflows/.forgejo/workflows/github-pull-on-timer@main
-      secrets:
-        GH_PAT: ${{ secrets.GH_PAT }}
+jobs:
+  sync:
+    uses: e-shrdlu/workflows/.forgejo/workflows/github-pull-on-timer.yml@main
+    secrets:
+      GH_PAT: ${{ secrets.GH_PAT }}
