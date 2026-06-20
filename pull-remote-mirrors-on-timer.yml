@@ -1,10 +1,25 @@
-# put this in .forgejo/workflows, and edit the cronjob to be the right time esired
+# put this in .forgejo/workflows, and edit the cronjob to be the right time desired
+#
+# Diverged branches get written to refs/conflicts/<remote>/<branch> on the
+# hub instead of refs/heads/, so they don't show up as real branches and
+# don't get fanned out by forgesync. To work with them locally:
+#
+#   # list what's there
+#   git ls-remote https://localgitrepo.net/OWNER/REPO.git 'refs/conflicts/*'
+#
+#   # fetch one down to inspect/merge
+#   git fetch https://localgitrepo.net/OWNER/REPO.git \
+#     'refs/conflicts/github/BRANCH:refs/conflicts/github/BRANCH'
+#
+#   # once resolved, delete it from the hub (the script never does this for you)
+#   git push https://localgitrepo.net/OWNER/REPO.git \
+#     --delete refs/conflicts/github/BRANCH
 
 on:
-  schedule:
-    - cron: '* * * * *' # minute
-    # - cron: '0 * * * *' # every hour
+  schedule: # TODO: uncomment one of these lines, or make a new one
+    # - cron: '* * * * *' # minute # every minute
     # - cron: '*/15 * * * *' # every 15mins
+    # - cron: '0 * * * *' # every hour
     # - cron: '0 2 * * *' # every day @ 2am
     # - cron: '0 2 * * 1' # every monday @ 2am
   workflow_dispatch:
